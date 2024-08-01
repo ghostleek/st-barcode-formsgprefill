@@ -3,5 +3,3 @@ streamlit-webrtc
 opencv-python-headless
 pyzbar
 Pillow
-zbar-tools
-libzbar0
