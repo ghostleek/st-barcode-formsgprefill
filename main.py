@@ -1,9 +1,15 @@
 import streamlit as st
-import cv2
+from streamlit_webrtc import webrtc_streamer, VideoTransformerBase
 import numpy as np
-from PIL import Image
 from pyzbar.pyzbar import decode
+import cv2
 import webbrowser
+import os
+
+# Set the library path for macOS
+if 'DYLD_LIBRARY_PATH' not in os.environ:
+    os.environ['DYLD_LIBRARY_PATH'] = '/opt/homebrew/lib:/opt/homebrew/opt/zbar/lib'
+
 
 # Read base URL and prefill IDs from secrets
 base_url = st.secrets.get("base_url", "https://example.com")
@@ -24,6 +30,9 @@ field2_value = query_params.get(prefill_id2, [''])[0]
 if 'barcode_value' not in st.session_state:
     st.session_state.barcode_value = None
 
+if 'field2_value' not in st.session_state:
+    st.session_state.field2_value = field2_value
+
 # Title of the app
 st.title("Barcode Scanner and URL Generator")
 
@@ -32,41 +41,33 @@ try:
     from ctypes import cdll
     cdll.LoadLibrary('libzbar.so.0')  # For Unix-based systems
     st.write("zbar library loaded successfully.")
-except OSError:
-    st.error("Unable to load zbar shared library. Please ensure it is installed.")
+except OSError as e:
+    st.error(f"Unable to load zbar shared library. Please ensure it is installed. Error: {e}")
 
-# Active barcode scanner using the webcam
-FRAME_WINDOW = st.image([])
-cap = cv2.VideoCapture(0)
+# Define a video transformer class
+class VideoTransformer(VideoTransformerBase):
+    def __init__(self):
+        self.barcode_detected = False
 
-if cap.isOpened():
-    st.write("Camera is on")
-    while True:
-        ret, frame = cap.read()
-        if not ret:
-            st.error("Failed to capture image")
-            break
-
-        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+    def transform(self, frame):
+        img = frame.to_ndarray(format="bgr24")
+        gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
         barcodes = decode(gray)
 
         for barcode in barcodes:
             barcode_data = barcode.data.decode('utf-8')
             st.session_state.barcode_value = barcode_data
             st.success(f"Barcode found: {barcode_data}")
-            
+
             # Draw a bounding box around the barcode
             (x, y, w, h) = barcode.rect
-            cv2.rectangle(frame, (x, y), (x + w, y + h), (0, 255, 0), 2)
-            cap.release()
-            break
+            cv2.rectangle(img, (x, y), (x + w, y + h), (0, 255, 0), 2)
+            self.barcode_detected = True
 
-        FRAME_WINDOW.image(frame, channels='BGR')
+        return img
 
-        if st.session_state.barcode_value:
-            break
-
-cap.release()
+# Initialize the webrtc streamer
+webrtc_ctx = webrtc_streamer(key="example", video_transformer_factory=VideoTransformer)
 
 # Display the scanned barcode value
 if st.session_state.barcode_value:
@@ -75,13 +76,13 @@ if st.session_state.barcode_value:
 # Streamlit form
 with st.form("my_form"):
     field1 = st.text_input(f"Field 1 ({prefill_id})", value=st.session_state.barcode_value, disabled=True)
-    field2 = st.text_input(f"Field 2 ({prefill_id2})", value=field2_value, disabled=True)
-    
+    field2 = st.text_input(f"Field 2 ({prefill_id2})", value=st.session_state.field2_value, disabled=True)
+
     submit_button = st.form_submit_button(label='Submit')
 
 # Construct URL and redirect on submit
-if submit_button and st.session_state.barcode_value and field2_value:
-    constructed_url = f"{base_url}/{prefill_id}?={st.session_state.barcode_value}&{prefill_id2}?={field2_value}"
+if submit_button and st.session_state.barcode_value and st.session_state.field2_value:
+    constructed_url = f"{base_url}/{prefill_id}?={st.session_state.barcode_value}&{prefill_id2}?={st.session_state.field2_value}"
     st.write("Constructed URL:")
     st.write(constructed_url)
     webbrowser.open(constructed_url)
