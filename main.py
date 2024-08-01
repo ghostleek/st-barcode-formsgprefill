@@ -27,6 +27,14 @@ if 'barcode_value' not in st.session_state:
 # Title of the app
 st.title("Barcode Scanner and URL Generator")
 
+# Check if zbar shared library is available
+try:
+    from ctypes import cdll
+    cdll.LoadLibrary('libzbar.so.0')  # For Unix-based systems
+    st.write("zbar library loaded successfully.")
+except OSError:
+    st.error("Unable to load zbar shared library. Please ensure it is installed.")
+
 # Active barcode scanner using the webcam
 FRAME_WINDOW = st.image([])
 cap = cv2.VideoCapture(0)
@@ -51,7 +59,6 @@ if cap.isOpened():
             (x, y, w, h) = barcode.rect
             cv2.rectangle(frame, (x, y), (x + w, y + h), (0, 255, 0), 2)
             cap.release()
-            cv2.destroyAllWindows()
             break
 
         FRAME_WINDOW.image(frame, channels='BGR')
@@ -60,7 +67,6 @@ if cap.isOpened():
             break
 
 cap.release()
-cv2.destroyAllWindows()
 
 # Display the scanned barcode value
 if st.session_state.barcode_value:
